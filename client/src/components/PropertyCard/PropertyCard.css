@@ -5,6 +5,13 @@
   max-width: max-content;
   margin: auto;
   transition: all 300ms ease-in;
+  position: relative;
+}
+.r-card>svg{
+    position: absolute;
+    top: 25px;
+    right: 30px;
+    z-index: 1;
 }
 
 .r-card > img {
