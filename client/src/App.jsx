@@ -5,6 +5,9 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Suspense } from "react";
 import Properties from "./pages/Properties/Properties";
 import { QueryClient, QueryClientProvider } from "react-query";
+import {ReactQueryDevtools} from 'react-query/devtools'
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 function App() {
   const queryClient = new QueryClient();
@@ -20,6 +23,8 @@ function App() {
           </Routes>
         </Suspense>
       </BrowserRouter>
+      <ToastContainer/>
+      <ReactQueryDevtools initialIsOpen={false}/>
     </QueryClientProvider>
   );
 }

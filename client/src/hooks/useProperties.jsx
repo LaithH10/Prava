@@ -1,9 +1,19 @@
-import React from 'react'
+import React from "react";
+import { isError, useQuery } from "react-query";
+import { getAllProperties } from "../utils/api";
 
 const useProperties = () => {
-  return (
-    <div>useProperties</div>
-  )
-}
+  const { data, isLoading, isError, refetch } = useQuery(
+    "allPrperties",
+    getAllProperties,
+    { refetchOnWindowFocus: false }
+  );
+  return {
+    data,
+    isError,
+    isLoading,
+    refetch,
+  };
+};
 
-export default useProperties
+export default useProperties;
