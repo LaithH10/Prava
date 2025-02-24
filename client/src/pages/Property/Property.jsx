@@ -7,7 +7,7 @@ import { AiFillHeart } from "react-icons/ai";
 import "./Property.css";
 import { FaShower } from "react-icons/fa";
 import { AiTwotoneCar } from "react-icons/ai";
-import { MdMeetingRoom } from "react-icons/md";
+import { MdLocationPin, MdMeetingRoom } from "react-icons/md";
 
 const Property = () => {
   const { pathname } = useLocation();
@@ -83,6 +83,28 @@ const Property = () => {
             <span className="secondaryText" style={{textAlign: "justify"}}>
               {data?.description}
             </span>
+
+            {/* address */}
+            <div className="flexStart" style={{gap: "1rem"}}>
+              <MdLocationPin size={25}/>
+              <span className="secondaryText">
+                {
+                  data?.address
+                }
+                {
+                  data?.city
+                }
+                {
+                  data?.country
+                }
+              </span>
+            </div>
+
+
+            {/* booking button */}
+            <button className="button">
+              Book your visit
+            </button>
           </div>
 
           {/* right side */}
