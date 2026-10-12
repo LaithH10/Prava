@@ -2,7 +2,10 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { SignJWT } from "jose";
-import { AUDIENCE, ISSUER, otherKeyPair, signToken } from "./helpers.js";
+
+// This file never uses a database, even when RUN_DB_TESTS=1 is set for db.test.js.
+delete process.env.RUN_DB_TESTS;
+const { AUDIENCE, ISSUER, otherKeyPair, signToken } = await import("./helpers.js");
 
 const { createApp } = await import("../app.js");
 const { prisma } = await import("../config/prismaConfig.js");
