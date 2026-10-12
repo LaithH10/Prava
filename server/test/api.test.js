@@ -1,19 +1,46 @@
 // API tests using Node's built-in test runner: `yarn test` (from server/).
 //
-// The first group needs no database. The second group runs only with RUN_DB_TESTS=1:
-// it takes DATABASE_URL from server/.env, switches it to a separate `prava_test`
-// database, and removes everything it created afterwards.
+// The first group needs no database. The second group runs only with RUN_DB_TESTS=1.
+// It uses TEST_DATABASE_URL from server/.env.test: a dedicated test user whose only
+// permission is the test database. It never reads the app's DATABASE_URL credentials,
+// and it removes only the records it created.
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import dotenv from "dotenv";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1";
 
+// Refuses to run unless the test database is clearly separate from the app database.
+const useTestDatabase = () => {
+  const readEnv = (file) => {
+    const path = new URL(file, import.meta.url);
+    return fs.existsSync(path) ? dotenv.parse(fs.readFileSync(path)) : {};
+  };
+  const testUrl = readEnv("../.env.test").TEST_DATABASE_URL;
+  if (!testUrl) throw new Error("RUN_DB_TESTS=1 needs TEST_DATABASE_URL in server/.env.test");
+
+  const test = new URL(testUrl);
+  const testDb = test.pathname.slice(1);
+  if (!testDb.endsWith("_test")) {
+    throw new Error(`Test database name must end in "_test" (got "${testDb}")`);
+  }
+
+  const appUrl = readEnv("../.env").DATABASE_URL;
+  if (appUrl) {
+    const app = new URL(appUrl);
+    if (app.username === test.username) {
+      throw new Error("Test user must differ from the app's database user");
+    }
+    if (app.host === test.host && app.pathname === test.pathname) {
+      throw new Error("Test database must differ from the app database");
+    }
+  }
+  process.env.DATABASE_URL = testUrl;
+};
+
 if (RUN_DB_TESTS) {
-  dotenv.config({ path: new URL("../.env", import.meta.url) });
-  const url = new URL(process.env.DATABASE_URL);
-  url.pathname = "/prava_test";
-  process.env.DATABASE_URL = url.toString();
+  useTestDatabase();
 } else {
   // Unreachable on purpose: these tests must fail before touching a database.
   process.env.DATABASE_URL = "mongodb://127.0.0.1:1/unreachable?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000";
