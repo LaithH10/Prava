@@ -1,11 +1,17 @@
 import asyncHandler from "express-async-handler";
 import { prisma } from "../config/prismaConfig.js";
+import {
+  HttpError,
+  requireEmail,
+  requireFound,
+  requireObjectId,
+} from "../utils/validation.js";
 
 export const createUser = asyncHandler(async (req, res) => {
-  console.log("creating a user");
-
   // Only accept profile fields; bookings, favourites and owned residencies can't be set at sign-up.
   const { email, name, image } = req.body;
+  requireEmail(email);
+
   const userExist = await prisma.user.findUnique({ where: { email: email } });
   if (!userExist) {
     const user = await prisma.user.create({ data: { email, name, image } });
@@ -19,127 +25,117 @@ export const createUser = asyncHandler(async (req, res) => {
 //function to book a visit to a resd
 export const bookVisit = asyncHandler(async (req, res) => {
   const { email, date } = req.body;
-  const { id } = req.params;
+  requireEmail(email);
+  const id = requireObjectId(req.params.id, "residency id");
 
-  try {
-    const alreadyBooked = await prisma.user.findUnique({
+  const user = requireFound(
+    await prisma.user.findUnique({
       where: { email },
       select: { bookedVisits: true },
-    });
+    }),
+    "User not found"
+  );
 
-    if (!alreadyBooked) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    if (alreadyBooked.bookedVisits.some((visit) => visit.id === id)) {
-      return res
-        .status(400)
-        .json({ message: "This residency is already booked by you" });
-    }
-
-    await prisma.user.update({
-      where: { email: email },
-      data: {
-        bookedVisits: { push: { id, date } },
-      },
-    });
-    res.send("Your visit is booked successfully");
-  } catch (err) {
-    throw new Error(err.message);
+  if (user.bookedVisits.some((visit) => visit.id === id)) {
+    throw new HttpError(400, "This residency is already booked by you");
   }
+
+  await prisma.user.update({
+    where: { email: email },
+    data: {
+      bookedVisits: { push: { id, date } },
+    },
+  });
+  res.send("Your visit is booked successfully");
 });
 
 //functio to get all the booking of the user
 export const getAllBookings = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  try {
-    const bookings = await prisma.user.findUnique({
-      where: { email },
-      select: { bookedVisits: true },
-    });
-    res.status(200).send(bookings);
-  } catch (err) {
-    throw new Error(err.message);
-  }
+  requireEmail(email);
+
+  const bookings = await prisma.user.findUnique({
+    where: { email },
+    select: { bookedVisits: true },
+  });
+  res.status(200).send(requireFound(bookings, "User not found"));
 });
 
 //function to cancel the booking
 export const cancelBooking = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  const { id } = req.params;
+  requireEmail(email);
+  const id = requireObjectId(req.params.id, "residency id");
 
-  try {
-    const user = await prisma.user.findUnique({
+  const user = requireFound(
+    await prisma.user.findUnique({
       where: { email: email },
       select: { bookedVisits: true },
-    });
+    }),
+    "User not found"
+  );
 
-    const index = user.bookedVisits.findIndex((visit) => visit.id === id);
-
-    if (index === -1) {
-      res.status(404).json({ message: "Booking not found" });
-    } else {
-      user.bookedVisits.splice(index, 1);
-      await prisma.user.update({
-        where: { email: email },
-        data: {
-          bookedVisits: user.bookedVisits,
-        },
-      });
-
-      res.send("Booking cancelled successfully");
-    }
-  } catch (err) {
-    throw new Error(err.message);
+  const index = user.bookedVisits.findIndex((visit) => visit.id === id);
+  if (index === -1) {
+    throw new HttpError(404, "Booking not found");
   }
+
+  user.bookedVisits.splice(index, 1);
+  await prisma.user.update({
+    where: { email: email },
+    data: {
+      bookedVisits: user.bookedVisits,
+    },
+  });
+
+  res.send("Booking cancelled successfully");
 });
 
 //function to add a resd in favourite list of a user
 export const toFav = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  const { rid } = req.params;
+  requireEmail(email);
+  const rid = requireObjectId(req.params.rid, "residency id");
 
-  try {
-    const user = await prisma.user.findUnique({
+  const user = requireFound(
+    await prisma.user.findUnique({
       where: { email },
-    });
-    if (user.favResidenciesID.includes(rid)) {
-      const updateUser = await prisma.user.update({
-        where: { email },
-        data: {
-          favResidenciesID: {
-            set: user.favResidenciesID.filter((id) => id !== rid),
-          },
-        },
-      });
+    }),
+    "User not found"
+  );
 
-      res.send({ message: "Removed from favourites", user: updateUser });
-    } else {
-      const updateUser = await prisma.user.update({
-        where: { email: email },
-        data: {
-          favResidenciesID: {
-            push: rid,
-          },
+  if (user.favResidenciesID.includes(rid)) {
+    const updateUser = await prisma.user.update({
+      where: { email },
+      data: {
+        favResidenciesID: {
+          set: user.favResidenciesID.filter((id) => id !== rid),
         },
-      });
-      res.send({ message: "Updated favourites", user: updateUser });
-    }
-  } catch (err) {
-    throw new Error(err.message);
+      },
+    });
+
+    res.send({ message: "Removed from favourites", user: updateUser });
+  } else {
+    const updateUser = await prisma.user.update({
+      where: { email: email },
+      data: {
+        favResidenciesID: {
+          push: rid,
+        },
+      },
+    });
+    res.send({ message: "Updated favourites", user: updateUser });
   }
 });
 
 // function to get all favourites
 export const getAllFavourites = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  try {
-    const favResd = await prisma.user.findUnique({
-      where: { email },
-      select: { favResidenciesID: true },
-    });
-    res.status(200).send(favResd);
-  } catch (err) {
-    throw new Error(err.message);
-  }
+  requireEmail(email);
+
+  const favResd = await prisma.user.findUnique({
+    where: { email },
+    select: { favResidenciesID: true },
+  });
+  res.status(200).send(requireFound(favResd, "User not found"));
 });
