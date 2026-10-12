@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Environment files (secrets). Only the .env.example templates are committed.
+.env
+.env.*
+!.env.example
+
+# Build output and logs
+dist/
+*.log

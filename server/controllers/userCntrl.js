@@ -4,10 +4,11 @@ import { prisma } from "../config/prismaConfig.js";
 export const createUser = asyncHandler(async (req, res) => {
   console.log("creating a user");
 
-  let { email } = req.body;
+  // Only accept profile fields; bookings, favourites and owned residencies can't be set at sign-up.
+  const { email, name, image } = req.body;
   const userExist = await prisma.user.findUnique({ where: { email: email } });
   if (!userExist) {
-    const user = await prisma.user.create({ data: req.body });
+    const user = await prisma.user.create({ data: { email, name, image } });
     res.send({
       message: "User registered successfully!",
       user: user,
@@ -26,18 +27,22 @@ export const bookVisit = asyncHandler(async (req, res) => {
       select: { bookedVisits: true },
     });
 
-    if (alreadyBooked.bookedVisits.some((visit) => visit.id === id)) {
-      res
-        .status(404)
-        .json({ message: "This residency is already booked by you" });
-    } else {
-      await prisma.user.update({
-        where: { email: email },
-        data: {
-          bookedVisits: { push: { id, date } },
-        },
-      });
+    if (!alreadyBooked) {
+      return res.status(404).json({ message: "User not found" });
     }
+
+    if (alreadyBooked.bookedVisits.some((visit) => visit.id === id)) {
+      return res
+        .status(400)
+        .json({ message: "This residency is already booked by you" });
+    }
+
+    await prisma.user.update({
+      where: { email: email },
+      data: {
+        bookedVisits: { push: { id, date } },
+      },
+    });
     res.send("Your visit is booked successfully");
   } catch (err) {
     throw new Error(err.message);
