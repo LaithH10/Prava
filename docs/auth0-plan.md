@@ -1,85 +1,134 @@
-# Auth0 implementation plan (for review, not yet approved)
+# Auth0 implementation plan, revision 2 (for review, not yet approved)
 
-Status: **proposal**. No code is written until Laith approves this plan.
-Base: `chore/launch-readiness` (`574e91b`).
+Status: **proposal**. No Auth0 code is written until Laith approves this revision.
+Base: `chore/launch-readiness`.
+
+## Decisions already made (Laith, 2026-10-12)
+| Topic | Decision |
+|---|---|
+| Provider | Auth0 |
+| User identity | Auth0 `sub` is the permanent user key. Email is profile data only |
+| Login methods | Email/password and Google |
+| Token storage | In memory (no localStorage), with refresh tokens |
+| Token checks | RS256 signature via JWKS, issuer, audience, expiry. No shared secrets |
+| Design | Existing Prava design kept. No redesign |
+| Workflow | Feature branches and draft PRs. No merge or deploy without Laith's approval |
 
 ## Goal
-Users can log in. The API knows who is calling from a verified token, never from the request body.
-Protected routes reject anonymous calls, and users can only act on their own data.
+Users log in with email/password or Google. The API identifies the caller only from a verified access token (`sub`), never from the request body. Protected routes reject anonymous calls, and users can act only on their own data.
 
-## What Laith sets up in Auth0 (free plan; Claude guides, Laith clicks)
-1. Create an Auth0 tenant (EU region).
-2. Create an **Application**, type *Single Page Application*, named "Prava Web".
-   - Allowed Callback URLs, Logout URLs and Web Origins: `http://localhost:5173` (staging URL added later).
-3. Create an **API** named "Prava API" with identifier `https://api.prava` (the audience) and signing algorithm RS256.
-4. Add a **post-login Action** that puts the user's email and `email_verified` into the access token as namespaced claims (`https://prava/email`, `https://prava/email_verified`). By default, Auth0 access tokens don't contain the email.
-5. Enable an email/password database connection, and optionally Google login.
+## 1. Auth0 setup (Laith clicks, Claude guides; free plan)
+1. Create a tenant in the EU region.
+2. **Application** "Prava Web", type *Single Page Application*.
+   - Callback, Logout and Web Origin URLs: `http://localhost:5173` (staging URL added later).
+   - Enable *Refresh Token Rotation*.
+3. **API** "Prava API", identifier (audience) `https://api.prava`, signing algorithm **RS256**.
+4. **Connections:**
+   - *Username-Password-Authentication* (email/password).
+   - *google-oauth2*. Auth0's shared Google dev keys work for local testing. Before public launch, Laith creates his own free Google OAuth client and enters it in Auth0.
+5. **Post-login Action:** adds `https://prava/email` and `https://prava/email_verified` to the access token, used for profile and contact only.
 
-None of these values are secrets. Domain, client ID and audience are public by design in a SPA.
-No client secret is needed.
+Domain, client ID and audience are public by design in a SPA. No client secret is used anywhere.
 
-## Configuration
-| Where | Variable | Example |
-|---|---|---|
-| server/.env | `AUTH0_ISSUER_BASE_URL` | `https://<tenant>.eu.auth0.com/` |
-| server/.env | `AUTH0_AUDIENCE` | `https://api.prava` |
-| client/.env.local | `VITE_AUTH0_DOMAIN` | `<tenant>.eu.auth0.com` |
-| client/.env.local | `VITE_AUTH0_CLIENT_ID` | from the Auth0 application |
-| client/.env.local | `VITE_AUTH0_AUDIENCE` | `https://api.prava` |
+## 2. Data model change (Prisma)
+The database is empty, so no data migration is needed.
 
-The `.env.example` files are updated with placeholders.
+```prisma
+model User {
+  id               String      @id @default(auto()) @map("_id") @db.ObjectId
+  authId           String      @unique          // Auth0 `sub`, e.g. "auth0|abc" or "google-oauth2|123"
+  email            String?                       // profile only, not unique: one person may log in two ways
+  emailVerified    Boolean     @default(false)
+  name             String?
+  image            String?
+  bookedVisits     Json[]
+  favResidenciesID String[]    @db.ObjectId
+  ownedResidencies Residency[] @relation("Owner")
+}
 
-## Backend
-- New `server/middleware/auth.js`:
-  - `requireAuth` uses `express-oauth2-jwt-bearer` (already a dependency) to check signature, issuer, audience and expiry. Failures return 401.
-  - `requireVerifiedEmail` reads the email claims, returns 403 if the email isn't verified, and sets `req.userEmail`.
-- Routes:
+model Residency {
+  // ...fields unchanged...
+  ownerId   String   @db.ObjectId
+  owner     User     @relation("Owner", fields: [ownerId], references: [id])
+  @@unique(fields: [address, ownerId])
+}
+```
 
-  | Route | Today | After |
-  |---|---|---|
-  | `GET /residency/allresd`, `GET /residency/:id` | public | public (unchanged) |
-  | `POST /residency/create` | trusts `userEmail` in body | protected; owner = token email; `userEmail` in body ignored |
-  | `POST /user/register` | trusts body | protected; creates/returns the caller's own user from the token |
-  | `POST /user/bookVisit/:id`, `POST /user/removeBooking/:id`, `POST /user/toFav/:rid` | trust `email` in body | protected; act on the token's user only |
-  | `POST /user/allBookings`, `POST /user/allFav` | trust `email` in body | protected; change to `GET` (no body needed; no client uses them yet) |
-- Controllers read `req.userEmail` instead of `req.body.email`. A caller can no longer act for someone else.
-- Bookings and favourites check that the residency exists (404), so ids that don't exist can't be stored.
-- **Identity key decision:** keep email as the user key for v1. That's the smallest change, and it's safe because only verified emails are accepted.
-  - Alternative: key users on Auth0's `sub`. That's more robust if users change email, and costs a schema change.
-  - The database is empty, so either is cheap now. **Recommendation: email for v1**, revisit before public launch.
+- `userEmail` on Residency is replaced by `ownerId`, a reference to `User.id`.
+- Email/password and Google logins for the same person are two separate users. Account linking is out of scope.
+- Indexes are applied with `prisma db push`. This runs on `prava_test` freely, and on the app database **only with Laith's approval**.
 
-## Frontend
-- Add `@auth0/auth0-react`. Wrap the app in `Auth0Provider` in `main.jsx` with audience and `useRefreshTokens` + `cacheLocation: "memory"`. Memory storage means no tokens in localStorage, and refresh tokens avoid third-party-cookie problems.
-- Header: the existing **Login** button triggers `loginWithRedirect`. When logged in it shows the user's avatar or name and **Logout**.
+## 3. Backend
+**New file `server/middleware/auth.js`:**
+- `requireAuth` uses `express-oauth2-jwt-bearer` (already a dependency).
+  - Settings: `issuer`, `audience`, `jwksUri` and `tokenSigningAlg: "RS256"`.
+  - In production these come from `AUTH0_DOMAIN` and `AUTH0_AUDIENCE`. The issuer is `https://<domain>/` and the JWKS address is `https://<domain>/.well-known/jwks.json`.
+  - Missing, expired or invalid token, or wrong issuer or audience → **401**.
+- `loadUser` finds or creates the `User` by `authId = sub` and refreshes the email claims. It sets `req.user`.
+- `requireVerifiedEmail` returns **403** for writes that need a verified email (create property, book visit). Google accounts are always verified, and email/password users verify through Auth0's email.
+
+**Routes:**
+| Route | After |
+|---|---|
+| `GET /api/residency/allresd`, `GET /api/residency/:id` | public (unchanged) |
+| `POST /api/residency/create` | auth + verified email; owner = `req.user` (body owner fields ignored) |
+| `POST /api/user/register` | auth; returns the caller's own profile (created by `loadUser`) |
+| `POST /api/user/bookVisit/:id` | auth + verified email; residency must exist (404) |
+| `POST /api/user/removeBooking/:id`, `POST /api/user/toFav/:rid` | auth; caller's own data only; residency must exist for `toFav` |
+| `GET /api/user/bookings`, `GET /api/user/favourites` | auth; replace `POST allBookings` and `POST allFav` (no client uses those yet) |
+
+`email` and `userEmail` in request bodies are no longer read anywhere.
+
+**Config:** `server/.env.example` gains `AUTH0_DOMAIN` and `AUTH0_AUDIENCE`.
+
+## 4. Frontend (milestone 2)
+- `@auth0/auth0-react`. `Auth0Provider` in `main.jsx` with `authorizationParams.audience`, `useRefreshTokens: true` and `cacheLocation: "memory"`.
+- Header: the existing **Login** button calls `loginWithRedirect`, which shows both email/password and Google on Auth0's login page. When logged in, the header shows the name or avatar and **Logout**, styled like the current buttons.
 - `utils/api.js`: an axios interceptor adds `Authorization: Bearer <token>` from `getAccessTokenSilently()` to protected calls.
-- After login, call `POST /user/register` once to sync the profile.
-- A small `RequireAuth` wrapper for future protected pages (add property, my bookings, favourites).
-- No visual redesign. The existing header styles are reused.
+- After login, call `POST /api/user/register` once.
+- `RequireAuth` wrapper for future protected pages.
+- `client/.env.example` gains `VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID` and `VITE_AUTH0_AUDIENCE`.
 
-## Tests
-- **Server (automated, `yarn test`):** tests sign their own tokens with a test-only key, so they never need Auth0 or the internet. The middleware takes the issuer, audience and key from env, and tests use a local secret.
-  - Missing token → 401. Bad signature, expired or wrong audience → 401.
-  - Valid token with an unverified email → 403.
-  - Valid token → protected routes work (with `RUN_DB_TESTS=1` against `prava_test`).
-  - An `email`/`userEmail` in the body is ignored: user A can't book or favourite as user B.
-  - Public routes still work without a token.
-- **Client:** production build passes. A manual checklist covers login, logout, page refresh while logged in, a protected call with and without login, and token expiry. Playwright end-to-end tests come in the testing phase.
+## 5. Tests: real RS256 tokens, no calls to Auth0
+- In the test process, `jose` (already installed with `express-oauth2-jwt-bearer`) creates an RSA key pair.
+- A local HTTP server on `127.0.0.1` serves the public key as a JWKS. The tests point the issuer and JWKS address at it, so the production verification code runs unchanged, only with different config.
+- The same key signs test tokens with different `sub` and email claims.
 
-## Delivery
-- Branch `feat/auth0` from `chore/launch-readiness`, with a draft PR. Planned commits:
-  1. server middleware and tests
-  2. route/controller changes
-  3. client provider and login button
-  4. API token interceptor
-  5. env templates and docs
-- Laith reviews the PR (and ChatGPT independently). Nothing is merged or deployed without approval.
+| Case | Expected |
+|---|---|
+| no token / malformed token | 401 |
+| token signed by a different key | 401 |
+| expired token, wrong issuer, wrong audience | 401 |
+| HS256 token (algorithm confusion) | 401 |
+| valid token, unverified email, create property / book visit | 403 |
+| valid token → register, create property, book, favourite | 200 (DB tests) |
+| user A's token tries to cancel or book as user B (body fields) | ignored; acts only on A |
+| user A cannot see user B's bookings/favourites | yes |
+| public routes without token | 200 |
+| duplicate property per owner | 409 (unchanged) |
 
-## Out of scope for this milestone
-- Add-property form, favourites/bookings UI (next milestone, built on this)
-- Roles/admin, edit/delete property with owner checks (needed once those routes exist)
+- The database tests use the dedicated `prava-test` user and the `prava_test` database. The guards from `77c2e76` refuse any other database or the app user.
+- The client gets a production build check plus a manual checklist: login and logout with both methods, page refresh while logged in, protected call when logged out, token expiry. Playwright comes in the testing phase.
+
+## 6. Milestones
+**Milestone 1, backend auth:** branch `feat/auth0-api` from `chore/launch-readiness`, draft PR.
+1. Prisma schema switch to `authId`/`ownerId`, with controllers updated.
+2. `auth.js` middleware with RS256/JWKS config from env.
+3. Routes protected, body identity removed, `GET` bookings and favourites.
+4. Test JWKS harness and the auth tests above. DB tests run against `prava_test`.
+5. `.env.example` updates and a short README section.
+
+Done when all tests pass locally (with and without the database), the PR is reviewed, and no Auth0 tenant is needed yet.
+
+**Milestone 2, frontend login:** branch `feat/auth0-web`. Needs the Auth0 tenant from section 1. Provider, login and logout, token interceptor, profile sync, manual checklist.
+
+**Milestone 3, then:** add-property form, my bookings, favourites UI.
+
+## Out of scope
+- Account linking (email/password + Google for the same person)
+- Roles/admin, edit or delete property with owner checks (added when those routes exist)
 - Deployment, Atlas network restrictions, CI
 
-## Decisions needed from Laith
-1. Approve the plan overall.
-2. Email (recommended) or Auth0 `sub` as the user key for v1.
-3. Email/password only, or also Google login.
+## Needs Laith's approval
+1. This revision as a whole.
+2. Starting milestone 1. It needs no Auth0 account yet.
