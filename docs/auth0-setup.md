@@ -1,7 +1,11 @@
 # Milestone 2: Auth0 setup guide and frontend plan
 
-Status: **for review**. Laith does the Auth0 dashboard steps (sections 1–6); Claude guides.
+Status: **plan approved** (2026-10-13), revision 2. Laith does the Auth0 and Atlas setup (sections 1–7); Claude guides.
 Claude starts `feat/auth0-web` only after Laith confirms the setup.
+
+Decisions:
+- Tokens are kept in memory only, with refresh token rotation and the SDK's fallback.
+- Development logins use a separate `prava_dev` database, never `LystedRealEtstate`.
 No app database changes, no merge and no deploy without Laith's approval.
 
 Values used throughout. Change them consistently if needed:
@@ -82,8 +86,25 @@ Authentication → Social → **Create Connection** → **Google / Gmail** → C
 
 The Action adds `https://prava/email` and `https://prava/email_verified` to access tokens for `https://api.prava`. The API uses `email_verified` to allow creating properties and booking visits (403 otherwise). Identity is always the token's `sub`.
 
-## 7. Environment variables (Laith fills these in locally; none of them are secrets)
-`server/.env` (add):
+## 7. Development database `prava_dev` (MongoDB Atlas)
+Real logins create `User` documents, so local development must never point at the app database.
+
+1. Atlas → Database & Network Access → **+ Add New Database User**
+   - Username `prava-dev`, **Autogenerate** password, then **Copy**
+   - **Built-in Role:** none (0 selected)
+   - **Specific Privileges:** exactly one row, `readWrite` @ `prava_dev`
+   - **Add User**. Afterwards the Roles column must show only `readWrite@prava_dev`.
+2. Keep the current `prava-app` connection string somewhere safe outside the repo (e.g. your password manager). It's only needed when we deploy.
+3. In `server/.env`, set `DATABASE_URL` to the `prava-dev` user and the `prava_dev` database:
+   ```
+   DATABASE_URL="mongodb+srv://prava-dev:<password>@prava.ilbm7.mongodb.net/prava_dev?retryWrites=true&w=majority&appName=Prava"
+   ```
+4. Claude verifies the live roles read-only, then applies the schema to `prava_dev` **only**, with the same guarded approach as `prava_test`.
+
+**Guard in code (part of `feat/auth0-web`):** the server refuses to start when `DATABASE_URL` points at `LystedRealEtstate`, unless `ALLOW_APP_DATABASE=1` is set. That flag is used only for the approved production deployment.
+
+## 8. Environment variables (Laith fills these in locally; none of them are secrets)
+`server/.env` (add, next to the `prava_dev` `DATABASE_URL` above):
 ```
 AUTH0_DOMAIN=<tenant>.eu.auth0.com
 AUTH0_AUDIENCE=https://api.prava
@@ -100,11 +121,14 @@ VITE_AUTH0_AUDIENCE=https://api.prava
 
 Domain, client ID and audience are visible to every visitor of a SPA by design. Still, the files stay local, and the committed `.env.example` files hold placeholders only.
 
-**Setup confirmation:** when sections 1–7 are done, tell Claude "Auth0 setup done". Claude then checks, without any secrets, that `https://<tenant>.eu.auth0.com/.well-known/openid-configuration` and `/.well-known/jwks.json` respond, and that the server starts with the new env.
+**Setup confirmation:** when sections 1–8 are done, tell Claude "Auth0 setup done". Claude then checks, without printing any secrets:
+- that `https://<tenant>.eu.auth0.com/.well-known/openid-configuration` and `/.well-known/jwks.json` respond
+- that `prava-dev` has only `readWrite@prava_dev`
+- that the server starts against `prava_dev`
 
 ---
 
-## 8. How the React app connects to the protected API (`feat/auth0-web`)
+## 9. How the React app connects to the protected API (`feat/auth0-web`)
 No visual redesign. New UI elements reuse the existing `.button` styles and header layout.
 
 1. **Provider.** Add `@auth0/auth0-react`. `main.jsx` wraps `<App />` in:
@@ -122,6 +146,7 @@ No visual redesign. New UI elements reuse the existing `.button` styles and head
    >
    ```
 2. **Header.**
+   - While the SDK initialises (`isLoading`), the app **never assumes a login state**. The header keeps the Login button's space but disables it, and no protected call is made until initialisation has finished.
    - Logged out: the existing **Login** button calls `loginWithRedirect()`. Auth0's Universal Login page offers both email/password and "Continue with Google".
    - Logged in: show the user's avatar or initial (from the ID token's `picture`/`name`) and a **Logout** button with the same `.button` class, calling `logout({ logoutParams: { returnTo: window.location.origin } })`.
    - The same applies to the mobile menu.
@@ -129,50 +154,72 @@ No visual redesign. New UI elements reuse the existing `.button` styles and head
    - A small `AuthTokenBridge` component inside the provider registers `getAccessTokenSilently` with `utils/api.js`.
    - An axios request interceptor adds `Authorization: Bearer <token>` to `/user/*` and `POST /residency/create` calls only. Public listing calls stay token-free.
    - On a 401 from the API, the client prompts a fresh login. On a 403 ("verify your email"), it shows a toast.
-4. **Profile sync.** When `isAuthenticated` first becomes true, call `POST /api/user/register` once with `{ name, image }` from the ID token. The server ignores anything else and only accepts an `https` image.
-5. **Session restore.**
-   - Tokens are kept **in memory only**, so nothing sits in localStorage where injected scripts could read it.
-   - On a page reload the SDK tries a silent login through Auth0's session (`useRefreshTokensFallback`). This works in browsers that allow Auth0's cookie in an iframe, Chrome by default.
-   - In Safari and Firefox, which block third-party cookies, a reload shows the user as logged out. Clicking **Login** then signs them straight back in without a password, because the Auth0 session still exists.
-   - The full fix is an Auth0 custom domain (e.g. `login.<domain>`), a later launch task. **Decision for Laith:** accept this for now (recommended), or use `cacheLocation="localstorage"` for seamless reloads, at the cost of tokens readable by injected scripts.
+   - **Failed token renewal:** if `getAccessTokenSilently` throws (`login_required`, `missing_refresh_token`, `invalid_grant`, or a network error), the request isn't sent. The user sees a "session expired, please log in again" toast and the Login button, never a broken page or a request without a token.
+4. **Profile sync.** After initialisation, when `isAuthenticated` first becomes true, call `POST /api/user/register` once with `{ name, image }` from the ID token. The server ignores anything else and only accepts an `https` image.
+5. **Session restore (decided: memory only).**
+   - Tokens, including refresh tokens, are kept **in memory only**. Nothing is written to localStorage or sessionStorage, so a reload clears them.
+   - On a reload the SDK tries a silent restore through the Auth0 session (`useRefreshTokensFallback`). Whether that works depends on each browser's cookie rules and settings, so **we don't promise any particular result**. Tests B1–B3 record what actually happens in Chrome, Firefox and Safari (or WebKit), and the PR documents it.
+   - Whatever the result, the app must handle both outcomes cleanly: either logged in, or logged out with a working Login button.
+   - If the results are poor, an Auth0 custom domain is the known remedy. That's a later launch decision, not part of this milestone.
 6. **Protected pages.** A `RequireAuth` wrapper (`withAuthenticationRequired`) is ready for the milestone 3 pages: add property, my bookings, favourites. No new pages in milestone 2.
 
-## 9. Acceptance tests for milestone 2
-Automated: `yarn test` in server stays 23/23 (35/35 with `RUN_DB_TESTS=1`), and the client production build passes. Manual tests run in the browser pane against local servers, with screenshots or notes in the PR:
+## 10. Acceptance tests for milestone 2
+**Automated:**
+- `yarn test` in server stays green: 23/23, or 35/35 with `RUN_DB_TESTS=1`.
+- New server test: startup is refused when `DATABASE_URL` points at `LystedRealEtstate`.
+- The client production build passes.
 
+**Manual tests** run in the browser pane against local servers and `prava_dev`. Results go into the PR with notes or screenshots. "Record" means the outcome is documented as observed, not assumed.
+
+**Login, logout, identity**
 | # | Test | Expected |
 |---|---|---|
-| A1 | Click **Login** → sign up with a new email/password | Redirected back to Prava; header shows the user and **Logout** |
-| A2 | The same user, before verifying the email: try a write (via a temporary dev check or API call) | API returns 403 "verify your email"; the client shows a toast, not a crash |
-| A3 | Verify the email, log out and in again | `email_verified` claim is true; the write is allowed (200) |
-| A4 | **Continue with Google** | Logged in; a **separate** user (different `sub`) from the email/password account, as accepted for MVP |
-| A5 | After login, check the API | `POST /user/register` returned the user's own profile; `GET /user/bookings` returns 200 with a Bearer token |
-| A6 | Call `GET /user/bookings` without login | 401 |
-| A7 | Two users (email + Google) | Each sees only their own (empty) bookings and favourites |
-| A8 | **Logout** | Header shows **Login**; protected calls are no longer sent with a token; Auth0 session ended (Login asks for credentials again) |
-| A9 | Reload the page while logged in, in Chrome | Still logged in (silent restore) |
-| A10 | Reload while logged in, in a browser blocking third-party cookies | Shows logged out; one click on **Login** returns without a password (documented limitation) |
-| A11 | Leave the tab open past access-token expiry, then make a call | A new token is fetched with the refresh token; the call succeeds |
-| A12 | Tokens in browser storage | Nothing Auth0-related in localStorage or sessionStorage (memory cache) |
-| A13 | Public pages (home, properties, property detail) logged out | Unchanged; no token sent; no visual changes |
-| A14 | Mobile width (375px) | Login/Logout reachable in the existing mobile menu; layout unchanged |
-| A15 | App database | Untouched. Login testing writes only users, and **needs approval first** (see below) |
+| A1 | Load the app; watch the header during SDK initialisation | No login state is shown and no protected call is made until initialisation finishes |
+| A2 | **Login** → sign up with a new email/password (desktop) | Back on Prava; header shows the user and **Logout**; `POST /user/register` returns this user's own profile |
+| A3 | **Login** → **Continue with Google** (desktop) | Logged in as a **separate** user (different `sub`), as accepted for the MVP |
+| A4 | Login and logout at mobile width (375px) | Both work from the existing mobile menu; layout unchanged |
+| A5 | **Logout**, app session | Header shows **Login**; protected requests stop carrying a token; protected data disappears from the UI |
+| A6 | **Logout**, Auth0 session | Clicking **Login** again asks for credentials, so the Auth0 session really ended (not just the app's) |
 
-**Database during milestone 2:**
-- Real logins create `User` documents. Pointing the local server at `LystedRealEtstate` would write to the app database, and its schema indexes haven't been applied yet.
-- **Proposal: during milestone 2, run the local server against a separate `prava_dev` database** with its own `prava-dev` user, readWrite on `prava_dev` only.
-- Applying the schema to `LystedRealEtstate` stays a separate approval before deployment.
+**Authenticated API requests**
+| # | Test | Expected |
+|---|---|---|
+| B4 | Logged in: `GET /user/bookings`, `GET /user/favourites` | 200 with a Bearer token (checked in the network panel) |
+| B5 | Logged out: the same calls | 401; the UI handles it without crashing |
+| B6 | Public pages logged out (home, properties, property detail) | Unchanged; no Authorization header sent; no visual changes |
+| B7 | Two users (email and Google) | Each sees only their own (empty) bookings and favourites |
 
-## 10. Delivery
+**Email verification**
+| # | Test | Expected |
+|---|---|---|
+| C1 | Unverified email/password user tries a write (create property or book visit, via the API) | 403 "verify your email"; the client shows a toast |
+| C2 | Verify the email via Auth0's email, then log out and in | `email_verified` is true in the token and the write is allowed. Also **record** whether a token refresh alone (without re-login) picks up the change |
+| C3 | Google user | `email_verified` is true without extra steps |
+
+**Session restore and token renewal (record results, no promises)**
+| # | Test | Expected |
+|---|---|---|
+| B1 | Reload while logged in, **Chrome** (browser pane) | **Record** whether the session restores silently or shows logged out; either way the app is consistent and Login works |
+| B2 | Reload while logged in, **Firefox** | **Record** the result, as for B1 |
+| B3 | Reload while logged in, **Safari/WebKit** (if available; otherwise noted as untested) | **Record** the result, as for B1 |
+| B8 | Wait past access-token expiry (or use a short test lifetime on the API), then make a protected call | **Record:** a new token is fetched with the refresh token and the call succeeds |
+| B9 | **Failed renewal:** revoke the session in the Auth0 dashboard (Users → user → *Sessions* / revoke refresh tokens), then make a protected call | Renewal fails; no request is sent without a token; "session expired" toast; Login button shown; no broken page |
+| B10 | Browser storage after login | Nothing Auth0-related in localStorage or sessionStorage |
+
+**Databases**
+| # | Test | Expected |
+|---|---|---|
+| D1 | `LystedRealEtstate` after all tests | Unchanged: still no collections (read-only check) |
+| D2 | `prava_dev` | Contains only the users created by these manual tests |
+
+## 11. Delivery
 - Branch `feat/auth0-web`, from `feat/auth0-api`. One draft PR into `feat/auth0-api`.
 - Planned commits:
-  1. provider and env templates
-  2. header login and logout (desktop and mobile)
-  3. token bridge and axios interceptor
-  4. profile sync and error toasts
-  5. docs and test notes
-- No merge or deploy without approval.
-
-## Decisions needed from Laith
-1. Session restore: memory cache with the noted reload limitation (recommended), or localStorage.
-2. A `prava_dev` database and user for local login testing (recommended), instead of using `LystedRealEtstate`.
+  1. app-database startup guard and env templates
+  2. provider with the loading state
+  3. header login and logout (desktop and mobile)
+  4. token bridge, axios interceptor and failed-renewal handling
+  5. profile sync and error toasts
+  6. docs with the recorded test results
+- Review material: the implementation diff and the results table above.
+- No merge, no deploy, no changes to `LystedRealEtstate`.
