@@ -20,6 +20,8 @@ describe("with the isolated test database", { skip: !RUN_DB_TESTS }, () => {
   let tokenA;
   let tokenB;
   let residencyId;
+  // Set only after the live connection passed the safety check; cleanup requires it.
+  let verifiedTestDatabase = false;
 
   const property = {
     title: "Test house",
@@ -45,6 +47,7 @@ describe("with the isolated test database", { skip: !RUN_DB_TESTS }, () => {
 
   before(async () => {
     await assertIsolatedTestDatabase(prisma);
+    verifiedTestDatabase = true;
     server = createApp().listen(0);
     await new Promise((resolve) => server.once("listening", resolve));
     base = `http://127.0.0.1:${server.address().port}/api`;
@@ -54,6 +57,11 @@ describe("with the isolated test database", { skip: !RUN_DB_TESTS }, () => {
 
   after(async () => {
     server?.close();
+    if (!verifiedTestDatabase) {
+      // Setup failed or the safety check rejected the connection: delete nothing.
+      await prisma.$disconnect();
+      return;
+    }
     const users = await prisma.user.findMany({
       where: { authId: { startsWith: run } },
       select: { id: true },

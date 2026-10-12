@@ -35,3 +35,8 @@ The server refuses to start without the Auth0 settings.
   Before writing anything, the tests check the live connection. They refuse unless it's the `*_test` database and the user holds only read/readWrite roles on it.
 
 Never run `prisma db push` against the app database without approval.
+
+## Known pre-production risks
+- **Concurrent updates to bookings and favourites.** `bookVisit`, `removeBooking` and `toFav` read the user's `bookedVisits` / `favResidenciesID`, change the array in memory and write it back. Two requests from the same user at the same moment can overwrite each other: a booking or favourite may be lost or duplicated. Fix before production with atomic updates, either conditional `$push`/`$pull` via `prisma.$runCommandRaw` or separate `Booking`/`Favourite` collections with unique indexes.
+- **No rate limiting** on the API.
+- **The app database has no unique indexes for the new schema yet.** `prisma db push` against the app database needs explicit approval before deployment.
