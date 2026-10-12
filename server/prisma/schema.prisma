@@ -9,12 +9,16 @@ datasource db {
 
 model User {
     id               String      @id @default(auto()) @map("_id") @db.ObjectId
+    // Auth0 `sub`, e.g. "auth0|abc" or "google-oauth2|123". The only identity key.
+    authId           String      @unique
+    // Profile data from the token; not unique, since one person may log in two ways.
+    email            String?
+    emailVerified    Boolean     @default(false)
     name             String?
-    email            String      @unique
     image            String?
     bookedVisits     Json[]
     favResidenciesID String[]    @db.ObjectId
-    ownedresidencies Residency[] @relation("Owner")
+    ownedResidencies Residency[] @relation("Owner")
 }
 
 model Residency {
@@ -27,10 +31,10 @@ model Residency {
     country     String
     image       String
     facilities  Json
-    userEmail   String
-    owner       User     @relation("Owner", fields: [userEmail], references: [email])
+    ownerId     String   @db.ObjectId
+    owner       User     @relation("Owner", fields: [ownerId], references: [id])
     createdAt   DateTime @default(now())
     updatedAt   DateTime @updatedAt
 
-    @@unique(fields: [address, userEmail])
+    @@unique(fields: [address, ownerId])
 }

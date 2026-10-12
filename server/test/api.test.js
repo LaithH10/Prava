@@ -1,51 +1,8 @@
-// API tests using Node's built-in test runner: `yarn test` (from server/).
-//
-// The first group needs no database. The second group runs only with RUN_DB_TESTS=1.
-// It uses TEST_DATABASE_URL from server/.env.test: a dedicated test user whose only
-// permission is the test database. It never reads the app's DATABASE_URL credentials,
-// and it removes only the records it created.
+// API and auth tests that need no database. Run with `yarn test` from server/.
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import dotenv from "dotenv";
-
-const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1";
-
-// Refuses to run unless the test database is clearly separate from the app database.
-const useTestDatabase = () => {
-  const readEnv = (file) => {
-    const path = new URL(file, import.meta.url);
-    return fs.existsSync(path) ? dotenv.parse(fs.readFileSync(path)) : {};
-  };
-  const testUrl = readEnv("../.env.test").TEST_DATABASE_URL;
-  if (!testUrl) throw new Error("RUN_DB_TESTS=1 needs TEST_DATABASE_URL in server/.env.test");
-
-  const test = new URL(testUrl);
-  const testDb = test.pathname.slice(1);
-  if (!testDb.endsWith("_test")) {
-    throw new Error(`Test database name must end in "_test" (got "${testDb}")`);
-  }
-
-  const appUrl = readEnv("../.env").DATABASE_URL;
-  if (appUrl) {
-    const app = new URL(appUrl);
-    if (app.username === test.username) {
-      throw new Error("Test user must differ from the app's database user");
-    }
-    if (app.host === test.host && app.pathname === test.pathname) {
-      throw new Error("Test database must differ from the app database");
-    }
-  }
-  process.env.DATABASE_URL = testUrl;
-};
-
-if (RUN_DB_TESTS) {
-  useTestDatabase();
-} else {
-  // Unreachable on purpose: these tests must fail before touching a database.
-  process.env.DATABASE_URL = "mongodb://127.0.0.1:1/unreachable?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000";
-}
-process.env.CORS_ORIGIN = "http://localhost:5173";
+import { SignJWT } from "jose";
+import { AUDIENCE, ISSUER, otherKeyPair, signToken } from "./helpers.js";
 
 const { createApp } = await import("../app.js");
 const { prisma } = await import("../config/prismaConfig.js");
@@ -64,62 +21,47 @@ after(async () => {
   await prisma.$disconnect();
 });
 
-const post = (path, body) =>
+const call = (path, { method = "POST", token, body } = {}) =>
   fetch(base + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+    body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
   });
 
-describe("without a database", () => {
+const RID = "507f1f77bcf86cd799439011";
+const PROTECTED = [
+  ["POST", "/user/register"],
+  ["POST", `/user/bookVisit/${RID}`],
+  ["GET", "/user/bookings"],
+  ["POST", `/user/removeBooking/${RID}`],
+  ["POST", `/user/toFav/${RID}`],
+  ["GET", "/user/favourites"],
+  ["POST", "/residency/create"],
+];
+
+describe("general behaviour", () => {
   test("unknown route returns JSON 404", async () => {
     const res = await fetch(base + "/nope");
     assert.equal(res.status, 404);
     assert.deepEqual(await res.json(), { message: "Not found" });
   });
 
-  test("malformed property id returns 400", async () => {
+  test("malformed property id returns 400 (public route, no token)", async () => {
     const res = await fetch(base + "/residency/notanid");
     assert.equal(res.status, 400);
     assert.deepEqual(await res.json(), { message: "Invalid residency id" });
   });
 
   test("malformed JSON body returns 400", async () => {
-    const res = await fetch(base + "/user/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{bad json",
-    });
+    const res = await call("/user/register", { body: "{bad json" });
     assert.equal(res.status, 400);
     assert.deepEqual(await res.json(), { message: "Invalid JSON body" });
   });
 
-  const missingEmail = [
-    ["/user/register", {}],
-    ["/user/bookVisit/507f1f77bcf86cd799439011", { date: "2026-11-01" }],
-    ["/user/allBookings", {}],
-    ["/user/removeBooking/507f1f77bcf86cd799439011", {}],
-    ["/user/toFav/507f1f77bcf86cd799439011", {}],
-    ["/user/allFav", {}],
-    ["/residency/create", { title: "x" }],
-  ];
-  for (const [path, body] of missingEmail) {
-    test(`${path} without a valid email returns 400`, async () => {
-      const res = await post(path, body);
-      assert.equal(res.status, 400);
-      assert.deepEqual(await res.json(), { message: "A valid email is required" });
-    });
-  }
-
-  for (const path of ["/user/bookVisit/bad", "/user/removeBooking/bad", "/user/toFav/bad"]) {
-    test(`${path} with a malformed id returns 400`, async () => {
-      const res = await post(path, { email: "a@example.com" });
-      assert.equal(res.status, 400);
-      assert.deepEqual(await res.json(), { message: "Invalid residency id" });
-    });
-  }
-
-  test("database failure returns generic 500 without details", async () => {
+  test("public listing route needs no token (fails only on the database)", async () => {
     const res = await fetch(base + "/residency/allresd");
     assert.equal(res.status, 500);
     assert.deepEqual(await res.json(), { message: "Something went wrong" });
@@ -133,86 +75,66 @@ describe("without a database", () => {
   });
 });
 
-describe("with the prava_test database", { skip: !RUN_DB_TESTS }, () => {
-  const email = `test-${Date.now()}@example.com`;
-  const property = {
-    title: "Test house",
-    description: "Created by the API tests",
-    price: 250000,
-    address: `Teststraat ${Date.now()}`,
-    city: "Utrecht",
-    country: "Netherlands",
-    image: "https://example.com/house.jpg",
-    facilities: { bedrooms: 3, bathrooms: 1, parkings: 1 },
-    userEmail: email,
-  };
-  let residencyId;
-
-  after(async () => {
-    // Remove only what these tests created.
-    await prisma.residency.deleteMany({ where: { userEmail: email } });
-    await prisma.user.deleteMany({ where: { email } });
-  });
-
-  test("register a user", async () => {
-    const res = await post("/user/register", { email, name: "Test" });
-    assert.equal(res.status, 200);
-  });
-
-  test("create a property", async () => {
-    const res = await post("/residency/create", property);
-    assert.equal(res.status, 200);
-    residencyId = (await res.json()).residency.id;
-  });
-
-  test("duplicate property returns 409", async () => {
-    const res = await post("/residency/create", property);
-    assert.equal(res.status, 409);
-  });
-
-  test("property for an unknown owner returns 404", async () => {
-    const res = await post("/residency/create", {
-      ...property,
-      userEmail: "nobody-" + email,
+describe("authentication (401)", () => {
+  for (const [method, path] of PROTECTED) {
+    test(`${method} ${path} without a token`, async () => {
+      const res = await call(path, { method });
+      assert.equal(res.status, 401);
     });
-    assert.equal(res.status, 404);
-    assert.deepEqual(await res.json(), { message: "Owner not found" });
+  }
+
+  test("email in the body does not authenticate", async () => {
+    const res = await call(`/user/bookVisit/${RID}`, {
+      body: { email: "someone@example.com", date: "2026-11-01" },
+    });
+    assert.equal(res.status, 401);
   });
 
-  test("property with missing fields returns 400", async () => {
-    const res = await post("/residency/create", { userEmail: email });
-    assert.equal(res.status, 400);
+  const badTokens = {
+    "malformed token": async () => "not-a-jwt",
+    "token signed by another key": async () =>
+      signToken({ sub: "auth0|a", key: (await otherKeyPair()).privateKey }),
+    "expired token": async () => signToken({ sub: "auth0|a", expiresIn: Math.floor(Date.now() / 1000) - 120 }),
+    "wrong issuer": async () => signToken({ sub: "auth0|a", issuer: "https://evil.example/" }),
+    "wrong audience": async () => signToken({ sub: "auth0|a", audience: "https://other.api" }),
+    "HS256 token (algorithm confusion)": async () =>
+      new SignJWT({ sub: "auth0|a" })
+        .setProtectedHeader({ alg: "HS256", kid: "test-key" })
+        .setIssuer(ISSUER)
+        .setAudience(AUDIENCE)
+        .setExpirationTime("5m")
+        .sign(new TextEncoder().encode("a-guessable-shared-secret-of-32-bytes!")),
+    "unsigned token (alg none)": async () => {
+      const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+      const exp = Math.floor(Date.now() / 1000) + 300;
+      return `${enc({ alg: "none" })}.${enc({ sub: "auth0|a", iss: ISSUER, aud: AUDIENCE, exp })}.`;
+    },
+  };
+  for (const [name, makeToken] of Object.entries(badTokens)) {
+    test(`rejects ${name}`, async () => {
+      const res = await call("/user/bookings", { method: "GET", token: await makeToken() });
+      assert.equal(res.status, 401);
+    });
+  }
+
+  test("accepts a valid RS256 token (then needs the database)", async () => {
+    const token = await signToken({ sub: "auth0|valid" });
+    const res = await call("/user/bookings", { method: "GET", token });
+    // No database is reachable here, so loading the user fails after authentication.
+    assert.equal(res.status, 500);
+  });
+});
+
+describe("verified email (403)", () => {
+  test("unverified email cannot create a property", async () => {
+    const token = await signToken({ sub: "auth0|unverified", emailVerified: false });
+    const res = await call("/residency/create", { token, body: { title: "x" } });
+    assert.equal(res.status, 403);
   });
 
-  test("get the property, and 404 for a valid but unknown id", async () => {
-    assert.equal((await fetch(`${base}/residency/${residencyId}`)).status, 200);
-    const res = await fetch(base + "/residency/507f1f77bcf86cd799439011");
-    assert.equal(res.status, 404);
-  });
-
-  test("book a visit, then a duplicate booking returns 400", async () => {
-    const path = `/user/bookVisit/${residencyId}`;
-    assert.equal((await post(path, { email, date: "2026-11-01" })).status, 200);
-    assert.equal((await post(path, { email, date: "2026-11-02" })).status, 400);
-  });
-
-  test("cancel the booking, then cancelling again returns 404", async () => {
-    const path = `/user/removeBooking/${residencyId}`;
-    assert.equal((await post(path, { email })).status, 200);
-    assert.equal((await post(path, { email })).status, 404);
-  });
-
-  test("toggle a favourite on and off", async () => {
-    const path = `/user/toFav/${residencyId}`;
-    assert.equal((await (await post(path, { email })).json()).message, "Updated favourites");
-    assert.equal((await (await post(path, { email })).json()).message, "Removed from favourites");
-  });
-
-  test("unknown user returns 404 on user endpoints", async () => {
-    const other = "nobody-" + email;
-    assert.equal((await post(`/user/bookVisit/${residencyId}`, { email: other })).status, 404);
-    assert.equal((await post("/user/allBookings", { email: other })).status, 404);
-    assert.equal((await post(`/user/toFav/${residencyId}`, { email: other })).status, 404);
-    assert.equal((await post("/user/allFav", { email: other })).status, 404);
+  test("unverified email cannot book a visit", async () => {
+    const token = await signToken({ sub: "auth0|unverified", emailVerified: false });
+    const res = await call(`/user/bookVisit/${RID}`, { token, body: { date: "2026-11-01" } });
+    assert.equal(res.status, 403);
   });
 });

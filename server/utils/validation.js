@@ -7,7 +7,6 @@ export class HttpError extends Error {
 }
 
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Throws 400 unless id is a valid MongoDB ObjectId.
 export const requireObjectId = (id, label = "id") => {
@@ -15,14 +14,6 @@ export const requireObjectId = (id, label = "id") => {
     throw new HttpError(400, `Invalid ${label}`);
   }
   return id;
-};
-
-// Throws 400 unless email is a plausible email address.
-export const requireEmail = (email) => {
-  if (typeof email !== "string" || !EMAIL.test(email)) {
-    throw new HttpError(400, "A valid email is required");
-  }
-  return email;
 };
 
 // Throws 404 when a lookup returned nothing.

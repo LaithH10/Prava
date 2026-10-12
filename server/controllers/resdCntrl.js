@@ -1,12 +1,9 @@
 import asyncHandler from "express-async-handler";
 import { prisma } from "../config/prismaConfig.js";
-import {
-  HttpError,
-  requireEmail,
-  requireFound,
-  requireObjectId,
-} from "../utils/validation.js";
+import { HttpError, requireFound, requireObjectId } from "../utils/validation.js";
 
+// Requires auth + verified email (see routes). The owner is always the caller;
+// owner fields in the body are ignored.
 export const createResidency = asyncHandler(async (req, res) => {
   const {
     title,
@@ -17,9 +14,7 @@ export const createResidency = asyncHandler(async (req, res) => {
     city,
     facilities,
     image,
-    userEmail,
   } = req.body;
-  requireEmail(userEmail);
 
   try {
     const residency = await prisma.residency.create({
@@ -32,7 +27,7 @@ export const createResidency = asyncHandler(async (req, res) => {
         city,
         facilities,
         image,
-        owner: { connect: { email: userEmail } },
+        owner: { connect: { id: req.user.id } },
       },
     });
 
@@ -41,10 +36,6 @@ export const createResidency = asyncHandler(async (req, res) => {
     // P2002: unique constraint (same address for this owner)
     if (err.code === "P2002") {
       throw new HttpError(409, "A residency with this address already exists");
-    }
-    // P2025: the owner to connect to doesn't exist
-    if (err.code === "P2025") {
-      throw new HttpError(404, "Owner not found");
     }
     // Prisma validation errors (missing or wrongly typed fields)
     if (err.name === "PrismaClientValidationError") {

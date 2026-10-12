@@ -4,11 +4,14 @@ import {
   getAllResidencies,
   getResidency,
 } from "../controllers/resdCntrl.js";
+import { loadUser, requireVerifiedEmail } from "../middleware/auth.js";
 
-const router = express.Router();
+// Listing and detail stay public; creating a property needs a verified login.
+export const createResidencyRoute = (requireAuth) => {
+  const router = express.Router();
 
-router.post("/create", createResidency);
-router.get("/allresd", getAllResidencies);
-router.get("/:id", getResidency);
-
-export { router as residencyRoute };
+  router.post("/create", requireAuth, requireVerifiedEmail, loadUser, createResidency);
+  router.get("/allresd", getAllResidencies);
+  router.get("/:id", getResidency);
+  return router;
+};

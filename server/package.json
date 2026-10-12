@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "nodemon index.js",
-    "test": "node --test test/"
+    "test": "node --test \"test/**/*.test.js\"",
+    "db:push:test": "node test/push-test-schema.js"
   },
   "dependencies": {
     "@prisma/client": "^6.3.1",

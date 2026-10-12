@@ -1,8 +1,9 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import { userRoute } from "./routes/userRoute.js";
-import { residencyRoute } from "./routes/residencyRoute.js";
+import { createUserRoute } from "./routes/userRoute.js";
+import { createResidencyRoute } from "./routes/residencyRoute.js";
+import { createRequireAuth } from "./middleware/auth.js";
 
 // Builds the Express app without starting a server, so tests can use it too.
 export const createApp = () => {
@@ -17,8 +18,9 @@ export const createApp = () => {
   app.use(cookieParser());
   app.use(cors({ origin: allowedOrigins }));
 
-  app.use("/api/user", userRoute);
-  app.use("/api/residency", residencyRoute);
+  const requireAuth = createRequireAuth();
+  app.use("/api/user", createUserRoute(requireAuth));
+  app.use("/api/residency", createResidencyRoute(requireAuth));
 
   app.use((req, res) => {
     res.status(404).json({ message: "Not found" });
