@@ -47,3 +47,25 @@ Browser: the Claude desktop browser pane (Chromium-based, blocks third-party coo
 - Verification emails from Auth0's built-in provider landed in spam. A real email provider is a launch task.
 - Auth0's shared Google development keys are in use. Own Google OAuth keys are needed before launch.
 - Existing, unrelated to this milestone: React warnings from `react-accessible-accordion` and `GetStarted`; the Contact link points to a third-party email address (`zainkeepscode@gmail.com`); slight horizontal overflow at 375px.
+
+## Review fixes (ChatGPT review of 708fb41)
+| Finding | Fix |
+|---|---|
+| 1. Profile sync skipped after logout and login with the same account | Sync decisions moved into the pure `utils/authTransition.js`: the synced user is forgotten on logout, so the next login syncs again. Regression unit tests in `authTransition.test.js` |
+| 2. `QueryClient` recreated on render; user data could survive a user switch | `QueryClient` is a module-level singleton in `App.jsx`. On logout or a user switch, `AuthSync` removes React Query data under the `"user"` key prefix (convention for user-specific queries; public queries are kept) |
+| 3. Any 401 treated as an expired session; network errors could log users out | `classifyApiError` treats a 401/403 as auth failures only for protected requests. `classifyRenewalError` separates permanent renewal errors (`login_required`, `consent_required`, `invalid_grant`, `missing_refresh_token`, ...) from temporary ones (network, timeout). Temporary errors show a warning and keep the session |
+
+**Automated (after fixes):** server 27/27, server with test database 39/39, client unit tests 12/12 (new), client build passes.
+
+**Browser (after fixes; run against the app's own module instances):**
+| Test | Result |
+|---|---|
+| 401 from a public endpoint (simulated response) | ✅ Still logged in; no toast |
+| Temporary renewal failure (`TypeError: Failed to fetch`) | ✅ Still logged in; request not sent; "Couldn't reach the login service" warning |
+| Permanent renewal failure (`invalid_grant`) | ✅ Request not sent; "session expired" toast; header shows Login |
+| Same-user re-login | ✅ Exactly one `POST /user/register` (200) for the new login. A redirect login reloads the page, which also resets in-memory state, so the original bug is covered by the unit test (logout/login without reload) |
+| Full logout | ✅ The next Login asks for the password |
+| Browser storage | ✅ No Auth0 data |
+| `LystedRealEtstate` | ✅ Still not listed in Atlas Data Explorer (no data) |
+
+The real (non-simulated) failed renewal was tested before the fixes (B9: `consent_required`). It is classified as permanent by the same code path.

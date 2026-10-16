@@ -2,20 +2,15 @@ import axios from "axios";
 import dayjs from "dayjs";
 import { toast } from "react-toastify";
 import {
-  NotLoggedInError,
-  SessionExpiredError,
+  classifyApiError,
   getAccessToken,
   handleSessionExpired,
+  needsToken,
 } from "./auth";
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000/api",
 });
-
-// Only these calls carry a token; public listing and detail calls never do.
-const needsToken = ({ url = "", method = "get" }) =>
-  url.startsWith("/user/") ||
-  (method.toLowerCase() === "post" && url === "/residency/create");
 
 api.interceptors.request.use(async (config) => {
   if (needsToken(config)) {
@@ -29,13 +24,24 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error instanceof NotLoggedInError) {
-      toast.info("Please log in first");
-    } else if (error instanceof SessionExpiredError || error.response?.status === 401) {
-      toast.error("Your session has expired. Please log in again.");
-      handleSessionExpired();
-    } else if (error.response?.status === 403) {
-      toast.error(error.response.data?.message || "You are not allowed to do this");
+    switch (classifyApiError(error)) {
+      case "notLoggedIn":
+        toast.info("Please log in first");
+        break;
+      case "sessionExpired":
+        toast.error("Your session has expired. Please log in again.");
+        handleSessionExpired();
+        break;
+      case "temporary":
+        // Keep the session: renewal may work again once the connection is back.
+        toast.warn("Couldn't reach the login service. Please try again.");
+        break;
+      case "forbidden":
+        toast.error(error.response.data?.message || "You are not allowed to do this");
+        break;
+      default:
+        // Public endpoint failures and other errors are handled by the caller.
+        break;
     }
     return Promise.reject(error);
   }

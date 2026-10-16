@@ -11,8 +11,10 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import AuthSync from "./components/AuthSync/AuthSync";
 
+// One client for the app's lifetime, so the cache survives re-renders.
+const queryClient = new QueryClient();
+
 function App() {
-  const queryClient = new QueryClient();
   return (
     <QueryClientProvider client={queryClient}>
       <AuthSync />
