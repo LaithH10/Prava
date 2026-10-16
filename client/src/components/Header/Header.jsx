@@ -35,7 +35,7 @@ const Header = () => {
           >
             <NavLink to="/properties">Properties</NavLink>
 
-            <a href="mailto:zainkeepscode@gmail.com">Contact</a>
+            <NavLink to="/contact">Contact</NavLink>
 
             {/* No login state is shown until Auth0 has finished initialising */}
             {isLoading ? (

@@ -5,6 +5,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Suspense } from "react";
 import Properties from "./pages/Properties/Properties";
 import Property from "./pages/Property/Property";
+import ContactPage from "./pages/Contact/ContactPage";
 import { QueryClient, QueryClientProvider } from "react-query";
 import { ReactQueryDevtools } from "react-query/devtools";
 import { ToastContainer } from "react-toastify";
@@ -23,6 +24,7 @@ function App() {
           <Routes>
             <Route element={<Layout />}>
               <Route path="/" element={<Website />} />
+              <Route path="/contact" element={<ContactPage />} />
               <Route path="/properties">
                 <Route index element={<Properties />} />
                 <Route path=":propertyId" element={<Property />} />

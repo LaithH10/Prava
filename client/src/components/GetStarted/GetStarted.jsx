@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import "./GetStarted.css";
 const GetStarted = () => {
   return (
@@ -11,9 +12,9 @@ const GetStarted = () => {
             <br />
             Find your residence soon
           </span>
-          <button className="button" href>
-            <a href="mailto:zainkeepscode@gmail.com">Get Started</a>
-          </button>
+          <Link className="button" to="/properties">
+            Get Started
+          </Link>
         </div>
       </div>
     </div>
