@@ -1,12 +1,11 @@
 import express from "express";
+import { createUser, getListingVisitRequests, getMyListings } from "../controllers/userCntrl.js";
+import { addFavourite, getFavourites, removeFavourite } from "../controllers/favouriteCntrl.js";
 import {
-  bookVisit,
-  cancelBooking,
-  createUser,
-  getAllBookings,
-  getAllFavourites,
-  toFav,
-} from "../controllers/userCntrl.js";
+  cancelVisitRequest,
+  createVisitRequest,
+  getMyVisitRequests,
+} from "../controllers/visitRequestCntrl.js";
 import { loadUser, requireVerifiedEmail } from "../middleware/auth.js";
 
 // Every user route requires a valid token and acts on the caller only.
@@ -16,10 +15,16 @@ export const createUserRoute = (requireAuth) => {
   router.use(requireAuth);
 
   router.post("/register", loadUser, createUser);
-  router.post("/bookVisit/:id", requireVerifiedEmail, loadUser, bookVisit);
-  router.get("/bookings", loadUser, getAllBookings);
-  router.post("/removeBooking/:id", loadUser, cancelBooking);
-  router.post("/toFav/:rid", loadUser, toFav);
-  router.get("/favourites", loadUser, getAllFavourites);
+
+  router.get("/listings", loadUser, getMyListings);
+  router.get("/listings/:id/visit-requests", loadUser, getListingVisitRequests);
+
+  router.get("/favourites", loadUser, getFavourites);
+  router.put("/favourites/:residencyId", loadUser, addFavourite);
+  router.delete("/favourites/:residencyId", loadUser, removeFavourite);
+
+  router.get("/visit-requests", loadUser, getMyVisitRequests);
+  router.post("/visit-requests", requireVerifiedEmail, loadUser, createVisitRequest);
+  router.post("/visit-requests/:id/cancel", loadUser, cancelVisitRequest);
   return router;
 };

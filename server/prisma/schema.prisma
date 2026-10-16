@@ -8,33 +8,84 @@ datasource db {
 }
 
 model User {
-    id               String      @id @default(auto()) @map("_id") @db.ObjectId
+    id               String         @id @default(auto()) @map("_id") @db.ObjectId
     // Auth0 `sub`, e.g. "auth0|abc" or "google-oauth2|123". The only identity key.
-    authId           String      @unique
+    authId           String         @unique
     // Profile data from the token; not unique, since one person may log in two ways.
     email            String?
-    emailVerified    Boolean     @default(false)
+    emailVerified    Boolean        @default(false)
     name             String?
     image            String?
-    bookedVisits     Json[]
-    favResidenciesID String[]    @db.ObjectId
-    ownedResidencies Residency[] @relation("Owner")
+    ownedResidencies Residency[]    @relation("Owner")
+    visitRequests    VisitRequest[]
+    favourites       Favourite[]
+}
+
+enum ResidencyStatus {
+    ACTIVE
+    ARCHIVED
 }
 
 model Residency {
-    id          String   @id @default(auto()) @map("_id") @db.ObjectId
-    title       String
-    description String
-    price       Int
-    address     String
-    city        String
-    country     String
-    image       String
-    facilities  Json
-    ownerId     String   @db.ObjectId
-    owner       User     @relation("Owner", fields: [ownerId], references: [id])
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @updatedAt
+    id            String          @id @default(auto()) @map("_id") @db.ObjectId
+    title         String
+    description   String
+    price         Int
+    address       String
+    city          String
+    country       String
+    image         String
+    facilities    Json
+    ownerId       String          @db.ObjectId
+    owner         User            @relation("Owner", fields: [ownerId], references: [id])
+    // Listings are archived, never deleted, in normal operation.
+    status        ResidencyStatus @default(ACTIVE)
+    archivedAt    DateTime?
+    visitRequests VisitRequest[]
+    favourites    Favourite[]
+    createdAt     DateTime        @default(now())
+    updatedAt     DateTime        @updatedAt
 
     @@unique(fields: [address, ownerId])
+    @@index([status, createdAt])
+    @@index([ownerId, status])
+}
+
+enum VisitRequestStatus {
+    PENDING // sent, waiting; requested date not yet passed
+    CANCELLED // withdrawn by the requester
+    EXPIRED // requested date passed while pending
+    CLOSED // listing archived while pending
+}
+
+// A request to visit a listing; not a confirmed appointment.
+// One PENDING request per requester and listing is enforced by the partial unique
+// index "visit_request_one_pending" (see config/indexes.js), which Prisma can't declare.
+model VisitRequest {
+    id            String             @id @default(auto()) @map("_id") @db.ObjectId
+    requesterId   String             @db.ObjectId
+    residencyId   String             @db.ObjectId
+    // The requested day, stored as 00:00 UTC of that calendar date.
+    requestedDate DateTime
+    status        VisitRequestStatus @default(PENDING)
+    createdAt     DateTime           @default(now())
+    updatedAt     DateTime           @updatedAt
+    // When the request left PENDING.
+    closedAt      DateTime?
+    requester     User               @relation(fields: [requesterId], references: [id])
+    residency     Residency          @relation(fields: [residencyId], references: [id])
+
+    @@index([requesterId, status])
+    @@index([residencyId, status])
+}
+
+model Favourite {
+    id          String    @id @default(auto()) @map("_id") @db.ObjectId
+    userId      String    @db.ObjectId
+    residencyId String    @db.ObjectId
+    createdAt   DateTime  @default(now())
+    user        User      @relation(fields: [userId], references: [id])
+    residency   Residency @relation(fields: [residencyId], references: [id])
+
+    @@unique([userId, residencyId])
 }

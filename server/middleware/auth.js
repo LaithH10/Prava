@@ -26,12 +26,34 @@ const authConfig = () => {
 export const createRequireAuth = () =>
   auth({ ...authConfig(), tokenSigningAlg: "RS256" });
 
+// A request without an Authorization header passes through anonymously; one with
+// a header must carry a valid token (401 otherwise). The library's own
+// `authRequired: false` would silently ignore invalid tokens, so it isn't used.
+export const createOptionalAuth = (requireAuth) => (req, res, next) =>
+  req.headers.authorization ? requireAuth(req, res, next) : next();
+
 // 403 unless the token says the user's email is verified. Runs on claims only.
 export const requireVerifiedEmail = (req, res, next) => {
   if (req.auth?.payload?.[EMAIL_VERIFIED_CLAIM] !== true) {
-    return next(new HttpError(403, "Please verify your email address first"));
+    return next(
+      new HttpError(403, "Please verify your email address first", "EMAIL_NOT_VERIFIED")
+    );
   }
   next();
+};
+
+// For optional-auth routes: sets req.user to the existing user for a valid token,
+// or leaves it undefined. Never creates users.
+export const findOptionalUser = async (req, res, next) => {
+  try {
+    const authId = req.auth?.payload?.sub;
+    if (typeof authId === "string" && authId) {
+      req.user = (await prisma.user.findUnique({ where: { authId } })) ?? undefined;
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
 };
 
 // Finds or creates the caller's User from the token's `sub` and keeps the
@@ -41,7 +63,7 @@ export const loadUser = async (req, res, next) => {
     const { payload } = req.auth;
     const authId = payload.sub;
     if (typeof authId !== "string" || !authId) {
-      throw new HttpError(401, "Token has no subject");
+      throw new HttpError(401, "Token has no subject", "UNAUTHENTICATED");
     }
     const email =
       typeof payload[EMAIL_CLAIM] === "string" ? payload[EMAIL_CLAIM] : null;

@@ -7,7 +7,9 @@
   "scripts": {
     "start": "nodemon index.js",
     "test": "node --test \"test/**/*.test.js\"",
-    "db:push:test": "node test/push-test-schema.js"
+    "db:setup:dev": "node scripts/db-setup.js dev",
+    "db:setup:test": "node scripts/db-setup.js test",
+    "seed:dev": "node scripts/seed-dev.js"
   },
   "dependencies": {
     "@prisma/client": "^6.3.1",
@@ -17,7 +19,10 @@
     "express": "^4.21.2",
     "express-async-handler": "^1.2.0",
     "express-oauth2-jwt-bearer": "^1.6.0",
+    "express-rate-limit": "8.7.0",
+    "helmet": "8.3.0",
     "nodemon": "^3.1.9",
-    "prisma": "^6.3.1"
+    "prisma": "^6.3.1",
+    "zod": "4.6.5"
   }
 }

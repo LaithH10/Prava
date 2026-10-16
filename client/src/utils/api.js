@@ -62,7 +62,8 @@ export const getAllProperties = async () => {
     if (response.status === 400 || response.status === 500) {
       throw response.data;
     }
-    return response.data;
+    // The API returns { items, nextCursor }; pagination UI comes in phase 3E.
+    return response.data.items;
   } catch (error) {
     toast.error("Something went wrong");
     throw error;
