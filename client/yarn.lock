@@ -10,6 +10,31 @@
     "@jridgewell/gen-mapping" "^0.1.0"
     "@jridgewell/trace-mapping" "^0.3.9"
 
+"@auth0/auth0-auth-js@^1.16.1":
+  version "1.17.0"
+  resolved "https://registry.yarnpkg.com/@auth0/auth0-auth-js/-/auth0-auth-js-1.17.0.tgz#69a294394953b66e80e4c5cf85429faccb1e24cf"
+  integrity sha512-TweIiSy7EpGdl9ZmZhpK5vd3yJBSj80mhsvBj517f66vzpLAAQjsVtDpZM0fvXNxcBzEhgVAl7OSKWH3yXTDDg==
+  dependencies:
+    jose "^6.0.8"
+    openid-client "^6.8.0"
+
+"@auth0/auth0-react@2.28.2":
+  version "2.28.2"
+  resolved "https://registry.yarnpkg.com/@auth0/auth0-react/-/auth0-react-2.28.2.tgz#7bf795a5f8fba2346c85da3068f8ab16e82f450c"
+  integrity sha512-m4BSkS+miVK5TYYpgkqaA4rdUSl+CnhjKyaTQiJ3mgT8AtlN9tPmVkPjizb1pvzj11GYzx5wDYU+6vOkThcQZg==
+  dependencies:
+    "@auth0/auth0-spa-js" "^2.28.2"
+
+"@auth0/auth0-spa-js@^2.28.2":
+  version "2.28.4"
+  resolved "https://registry.yarnpkg.com/@auth0/auth0-spa-js/-/auth0-spa-js-2.28.4.tgz#6b06a4a6a740ba7f761dd315a620857dc24fae42"
+  integrity sha512-09djIML28o1qTW96inOnyuLZGhGNwkyqySpm6VS/gfWceeqvCjfVAiZtssaNohwvwK7F2NJ1IyC1YHBek5t4Cg==
+  dependencies:
+    "@auth0/auth0-auth-js" "^1.16.1"
+    browser-tabs-lock "^1.3.0"
+    dpop "^2.1.1"
+    es-cookie "~1.3.2"
+
 "@babel/code-frame@^7.18.6":
   version "7.18.6"
   resolved "https://registry.yarnpkg.com/@babel/code-frame/-/code-frame-7.18.6.tgz#3b25d38c89600baa2dcc219edfa88a74eb2c427a"
@@ -666,6 +691,13 @@ broadcast-channel@^3.4.1:
     rimraf "3.0.2"
     unload "2.2.0"
 
+browser-tabs-lock@^1.3.0:
+  version "1.3.0"
+  resolved "https://registry.yarnpkg.com/browser-tabs-lock/-/browser-tabs-lock-1.3.0.tgz#4c0381b47b55cd29feaaea5846b7bb97aac76053"
+  integrity sha512-g6nHaobTiT0eMZ7jh16YpD2kcjAp+PInbiVq3M1x6KKaEIVhT4v9oURNIpZLOZ3LQbQ3XYfNhMAb/9hzNLIWrw==
+  dependencies:
+    lodash ">=4.17.21"
+
 browserslist@^4.21.3:
   version "4.21.5"
   resolved "https://registry.yarnpkg.com/browserslist/-/browserslist-4.21.5.tgz#75c5dae60063ee641f977e00edd3cfb2fb7af6a7"
@@ -792,6 +824,11 @@ document.contains@^1.0.1:
   dependencies:
     define-properties "^1.1.3"
 
+dpop@^2.1.1:
+  version "2.1.2"
+  resolved "https://registry.yarnpkg.com/dpop/-/dpop-2.1.2.tgz#53e747dbcdca9a527550b0e8050beb1167d30609"
+  integrity sha512-hN3XjjCcgYWmNL8DFAV1Z3alXIvLolvjis189NI/U4k4Iu/m4rBeUYObbIjnRzQYDQv4zMaXXskjVDqSkmyh7Q==
+
 dunder-proto@^1.0.1:
   version "1.0.1"
   resolved "https://registry.yarnpkg.com/dunder-proto/-/dunder-proto-1.0.1.tgz#d7ae667e1dc83482f8b70fd0f6eefc50da30f58a"
@@ -845,6 +882,11 @@ es-abstract@^1.19.0, es-abstract@^1.20.4:
     typed-array-length "^1.0.4"
     unbox-primitive "^1.0.2"
     which-typed-array "^1.1.9"
+
+es-cookie@~1.3.2:
+  version "1.3.2"
+  resolved "https://registry.yarnpkg.com/es-cookie/-/es-cookie-1.3.2.tgz#80e831597f72a25721701bdcb21d990319acd831"
+  integrity sha512-UTlYYhXGLOy05P/vKVT2Ui7WtC7NiRzGtJyAKKn32g5Gvcjn7KAClLPWlipCtxIus934dFg9o9jXiBL0nP+t9Q==
 
 es-define-property@^1.0.1:
   version "1.0.1"
@@ -1290,6 +1332,11 @@ is-weakref@^1.0.2:
   dependencies:
     call-bind "^1.0.2"
 
+jose@^6.0.8, jose@^6.2.12:
+  version "6.2.12"
+  resolved "https://registry.yarnpkg.com/jose/-/jose-6.2.12.tgz#65663e146edd010b98ece83f81737d3aa95fd0d7"
+  integrity sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==
+
 js-sha3@0.8.0:
   version "0.8.0"
   resolved "https://registry.yarnpkg.com/js-sha3/-/js-sha3-0.8.0.tgz#b9b7a5da73afad7dedd0f8c463954cbde6818840"
@@ -1314,6 +1361,11 @@ leaflet@^1.0.0, leaflet@^1.9.4:
   version "1.9.4"
   resolved "https://registry.yarnpkg.com/leaflet/-/leaflet-1.9.4.tgz#23fae724e282fa25745aff82ca4d394748db7d8d"
   integrity sha512-nxS1ynzJOmOlHp+iL3FyWqK89GtNL8U8rvlMOsQdTTssxZwCXh8N2NB3GDQOL+YR3XnWyZAxwQixURb+FA74PA==
+
+lodash@>=4.17.21:
+  version "4.18.1"
+  resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.18.1.tgz#ff2b66c1f6326d59513de2407bf881439812771c"
+  integrity sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==
 
 lodash@^4.17.21:
   version "4.17.21"
@@ -1400,6 +1452,11 @@ node-releases@^2.0.8:
   resolved "https://registry.yarnpkg.com/node-releases/-/node-releases-2.0.10.tgz#c311ebae3b6a148c89b1813fd7c4d3c024ef537f"
   integrity sha512-5GFldHPXVG/YZmFzJvKK2zDSzPKhEp0+ZR5SVaoSag9fsL5YgHbUHDfnG5494ISANDcK4KwPXAx2xqVEydmd7w==
 
+oauth4webapi@^3.8.8:
+  version "3.8.8"
+  resolved "https://registry.yarnpkg.com/oauth4webapi/-/oauth4webapi-3.8.8.tgz#05b47975cb621cdfd5dad35cecfaf41170e15c79"
+  integrity sha512-8N28E+a/oxfXWBgOMt+ZP/JUf/XR+IFbvkAEPP3gznXOMv9BpAAwiIj0TFNz3tGTPc0ZQ8zmWBNgN1nAys0gng==
+
 object-assign@^4.1.1:
   version "4.1.1"
   resolved "https://registry.yarnpkg.com/object-assign/-/object-assign-4.1.1.tgz#2109adc7965887cfc05cbbd442cac8bfbb360863"
@@ -1462,6 +1519,14 @@ once@^1.3.0:
   integrity sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==
   dependencies:
     wrappy "1"
+
+openid-client@^6.8.0:
+  version "6.8.8"
+  resolved "https://registry.yarnpkg.com/openid-client/-/openid-client-6.8.8.tgz#b18448b14c5468ef88b7c175bee6d80183d6331c"
+  integrity sha512-ZsucJA5Ad04Uv7YN4ql+s4GXNmb9uAYQwyJTsJx7CH/MX3JZioLE2pVKi1SC+YrbSLA4Px3Gi30dMjgOZtb6pA==
+  dependencies:
+    jose "^6.2.12"
+    oauth4webapi "^3.8.8"
 
 path-is-absolute@^1.0.0:
   version "1.0.1"

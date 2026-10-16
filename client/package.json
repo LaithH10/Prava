@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@auth0/auth0-react": "2.28.2",
     "axios": "^1.7.9",
     "dayjs": "^1.11.13",
     "esri-leaflet-geocoder": "2.3.3",
