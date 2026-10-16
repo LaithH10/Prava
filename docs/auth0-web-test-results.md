@@ -46,7 +46,7 @@ Browser: the Claude desktop browser pane (Chromium-based, blocks third-party coo
 - On localhost, Auth0 always shows a consent screen on login. It won't appear on a real domain ("Allow Skipping User Consent" is on).
 - Verification emails from Auth0's built-in provider landed in spam. A real email provider is a launch task.
 - Auth0's shared Google development keys are in use. Own Google OAuth keys are needed before launch.
-- Existing, unrelated to this milestone: React warnings from `react-accessible-accordion` and `GetStarted`; the Contact link points to a third-party email address (`zainkeepscode@gmail.com`); slight horizontal overflow at 375px.
+- Existing, unrelated to this milestone: React warnings from `react-accessible-accordion` and `GetStarted`; the Contact link points to a third-party email address (now fixed: replaced by a /contact page); slight horizontal overflow at 375px.
 
 ## Review fixes (ChatGPT review of 708fb41)
 | Finding | Fix |
